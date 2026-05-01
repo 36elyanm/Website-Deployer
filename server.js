@@ -208,6 +208,14 @@ app.use((req, res, next) => {
 app.listen(PORT, async () => {
   console.log(`Website Deployer running on http://localhost:${PORT}`);
 
+  // On Glitch, the public URL is already known — no tunnel needed
+  if (process.env.PROJECT_DOMAIN) {
+    tunnelUrl = `https://${process.env.PROJECT_DOMAIN}.glitch.me`;
+    tunnelStatus = 'online';
+    console.log(`Glitch URL: ${tunnelUrl}`);
+    return;
+  }
+
   if (process.env.NO_TUNNEL) return;
 
   async function openTunnel() {
