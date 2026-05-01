@@ -9,7 +9,8 @@ const http = require('http');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, 'data', 'sites.json');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'sites.json');
 
 app.use(cors());
 app.use(express.json());
@@ -28,6 +29,7 @@ app.get('/robots.txt', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 function loadSites() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(DATA_FILE)) return [];
   try {
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
