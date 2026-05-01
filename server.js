@@ -13,6 +13,18 @@ const DATA_FILE = path.join(__dirname, 'data', 'sites.json');
 
 app.use(cors());
 app.use(express.json());
+
+// Block all search engine indexing
+app.use((req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+  next();
+});
+
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send('User-agent: *\nDisallow: /\n');
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 function loadSites() {

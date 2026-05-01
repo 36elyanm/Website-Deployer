@@ -39,25 +39,29 @@ function buildSiteCard(site) {
   });
 
   div.innerHTML = `
-    <div class="site-info">
-      <div class="site-title">
-        <span class="status-dot"></span>${escHtml(site.title)}
-      </div>
-      <div class="site-urls">
-        <div class="site-url">
-          <span class="label">Source</span>
-          <span class="source-link">${escHtml(site.sourceUrl)}</span>
+    <div class="site-top">
+      <div class="site-info">
+        <div class="site-title">
+          <span class="status-dot"></span>${escHtml(site.title)}
         </div>
-        <div class="site-url">
-          <span class="label">Domain</span>
-          <span class="target-link">${escHtml(site.targetDomain)}</span>
+        <div class="site-urls">
+          <div class="site-url">
+            <span class="label">Source</span>
+            <span class="source-link">${escHtml(site.sourceUrl)}</span>
+          </div>
+          <div class="site-url">
+            <span class="label">Domain</span>
+            <span class="target-link">${escHtml(site.targetDomain)}</span>
+          </div>
         </div>
       </div>
-      <div class="site-meta">Added ${date}</div>
     </div>
-    <div class="site-actions">
-      <button class="btn-icon primary" onclick="showInstructions('${site.id}')">Setup Guide</button>
-      <button class="btn-icon danger" onclick="deleteSite('${site.id}')">Remove</button>
+    <div class="site-bottom">
+      <div class="site-meta">Added ${date}</div>
+      <div class="site-actions">
+        <button class="btn-icon primary" onclick="showInstructions('${site.id}')">Setup Guide</button>
+        <button class="btn-icon danger" onclick="deleteSite('${site.id}')">Remove</button>
+      </div>
     </div>
   `;
   return div;
