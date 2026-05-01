@@ -1,0 +1,11 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "node server.js"
+healthcheckPath = "/api/sites"
+healthcheckTimeout = 10
+restartPolicyType = "on_failure"
+
+[[volumes]]
+mountPath = "/data"
