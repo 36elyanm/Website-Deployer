@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Website Deployer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="#6366f1"/>
+          <path d="M8 16L14 10L20 16L14 22L8 16Z" fill="white" opacity="0.9"/>
+          <path d="M14 16L20 10L26 16L20 22L14 16Z" fill="white" opacity="0.6"/>
+        </svg>
+        <span>Website Deployer</span>
+      </div>
+      <p class="tagline">Mirror any .netlify.app or .github.io site under your own domain</p>
+    </header>
+
+    <main>
+      <section class="card form-card">
+        <h2>Add New Site</h2>
+        <form id="deployForm">
+          <div class="field">
+            <label for="sourceUrl">Source URL</label>
+            <input
+              type="text"
+              id="sourceUrl"
+              placeholder="e.g. myproject.netlify.app or username.github.io"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <span class="hint">Must be a .netlify.app or .github.io address</span>
+          </div>
+
+          <div class="field">
+            <label for="targetDomain">Your Custom Domain</label>
+            <input
+              type="text"
+              id="targetDomain"
+              placeholder="e.g. myproject.com"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <span class="hint">The .com (or any TLD) domain you own</span>
+          </div>
+
+          <div id="formError" class="error-msg" hidden></div>
+
+          <button type="submit" id="submitBtn">
+            <span class="btn-text">Deploy Site</span>
+            <span class="btn-spinner" hidden>
+              <svg class="spin" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31" stroke-dashoffset="10"/>
+              </svg>
+              Deploying...
+            </span>
+          </button>
+        </form>
+      </section>
+
+      <section class="sites-section">
+        <h2>Deployed Sites <span id="siteCount" class="badge">0</span></h2>
+        <div id="sitesList" class="sites-list">
+          <div class="empty-state" id="emptyState">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <path d="M8 21h8M12 17v4"/>
+            </svg>
+            <p>No sites deployed yet. Add one above to get started.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- DNS Instructions Modal -->
+    <div id="modal" class="modal" hidden>
+      <div class="modal-backdrop" onclick="closeModal()"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modalTitle">Setup Instructions</h3>
+          <button class="modal-close" onclick="closeModal()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
