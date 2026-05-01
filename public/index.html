@@ -23,6 +23,21 @@
     </header>
 
     <main>
+      <!-- Public link banner -->
+      <section class="card tunnel-card" id="tunnelCard">
+        <div class="tunnel-row">
+          <div class="tunnel-label">
+            <span class="tunnel-dot" id="tunnelDot"></span>
+            <span id="tunnelStatusText">Connecting...</span>
+          </div>
+          <div class="tunnel-url-row" id="tunnelUrlRow" hidden>
+            <a class="tunnel-url" id="tunnelUrl" href="#" target="_blank" rel="noopener"></a>
+            <button class="btn-copy-url" id="tunnelCopyBtn" onclick="copyTunnelUrl()">Copy</button>
+          </div>
+        </div>
+        <p class="tunnel-hint" id="tunnelHint">Open this link on any device — phone, tablet, or another computer — to access the same dashboard.</p>
+      </section>
+
       <section class="card form-card">
         <h2>Add New Site</h2>
         <form id="deployForm">

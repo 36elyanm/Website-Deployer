@@ -82,6 +82,84 @@ header {
   gap: 10px;
 }
 
+/* Tunnel card */
+.tunnel-card {
+  border-color: rgba(99,102,241,0.35);
+  background: linear-gradient(135deg, rgba(99,102,241,0.08) 0%, var(--surface) 60%);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.tunnel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tunnel-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.tunnel-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #555570;
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+
+.tunnel-dot.online  { background: var(--success); animation: pulse 2s infinite; }
+.tunnel-dot.connecting { background: #f59e0b; animation: pulse 1s infinite; }
+.tunnel-dot.offline { background: var(--danger); }
+
+.tunnel-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tunnel-url {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.85rem;
+  color: var(--accent-hover);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.tunnel-url:hover { text-decoration: underline; }
+
+.btn-copy-url {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  color: var(--accent-hover);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn-copy-url:hover { background: var(--accent-dim); }
+.btn-copy-url.copied { color: var(--success); border-color: var(--success); }
+
+.tunnel-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 10px;
+}
+
 /* Form */
 .field {
   margin-bottom: 16px;

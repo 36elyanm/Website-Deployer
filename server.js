@@ -6,16 +6,20 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const localtunnel = require('localtunnel');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'sites.json');
 
+// Tunnel state shared with the status API
+let tunnelUrl = null;
+let tunnelStatus = 'connecting'; // 'connecting' | 'online' | 'offline'
+
 app.use(cors());
 app.use(express.json());
 
-// Block all search engine indexing
 app.use((req, res, next) => {
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
   next();
@@ -80,6 +84,11 @@ function fetchSiteTitle(sourceUrl) {
     req.on('timeout', () => { req.destroy(); resolve(null); });
   });
 }
+
+// API: tunnel status
+app.get('/api/tunnel', (req, res) => {
+  res.json({ url: tunnelUrl, status: tunnelStatus });
+});
 
 // API: list all sites
 app.get('/api/sites', (req, res) => {
@@ -157,14 +166,12 @@ app.get('/api/sites/:id/nginx', (req, res) => {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_ssl_server_name on;
 
-        # Rewrite absolute URLs in responses
         sub_filter '${sourceHost}' '${site.targetDomain}';
         sub_filter_once off;
         sub_filter_types text/html text/css text/javascript application/javascript;
     }
 }
 
-# Redirect www to non-www (optional)
 server {
     listen 80;
     server_name www.${site.targetDomain};
@@ -197,6 +204,39 @@ app.use((req, res, next) => {
   proxy(req, res, next);
 });
 
-app.listen(PORT, () => {
+// Start server then open tunnel
+app.listen(PORT, async () => {
   console.log(`Website Deployer running on http://localhost:${PORT}`);
+
+  if (process.env.NO_TUNNEL) return;
+
+  async function openTunnel() {
+    try {
+      tunnelStatus = 'connecting';
+      const tunnel = await localtunnel({ port: PORT });
+      tunnelUrl = tunnel.url;
+      tunnelStatus = 'online';
+      console.log(`Public URL: ${tunnel.url}`);
+
+      tunnel.on('close', () => {
+        console.log('Tunnel closed, reconnecting...');
+        tunnelStatus = 'offline';
+        tunnelUrl = null;
+        setTimeout(openTunnel, 3000);
+      });
+
+      tunnel.on('error', (err) => {
+        console.error('Tunnel error:', err.message);
+        tunnelStatus = 'offline';
+        tunnelUrl = null;
+        setTimeout(openTunnel, 5000);
+      });
+    } catch (err) {
+      console.error('Could not open tunnel:', err.message);
+      tunnelStatus = 'offline';
+      setTimeout(openTunnel, 10000);
+    }
+  }
+
+  openTunnel();
 });

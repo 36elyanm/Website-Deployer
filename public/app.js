@@ -1,5 +1,54 @@
 const API = '';
 
+// Tunnel status banner
+async function pollTunnel() {
+  try {
+    const res = await fetch(`${API}/api/tunnel`);
+    const { url, status } = await res.json();
+
+    const dot = document.getElementById('tunnelDot');
+    const statusText = document.getElementById('tunnelStatusText');
+    const urlRow = document.getElementById('tunnelUrlRow');
+    const urlEl = document.getElementById('tunnelUrl');
+    const hint = document.getElementById('tunnelHint');
+
+    dot.className = 'tunnel-dot ' + status;
+
+    if (status === 'online' && url) {
+      statusText.textContent = 'Public link active';
+      statusText.style.color = 'var(--success)';
+      urlEl.textContent = url;
+      urlEl.href = url;
+      urlRow.hidden = false;
+      hint.textContent = 'Open this link on any device — phone, tablet, or another computer — to access the same dashboard.';
+    } else if (status === 'connecting') {
+      statusText.textContent = 'Getting your public link...';
+      statusText.style.color = '';
+      urlRow.hidden = true;
+    } else {
+      statusText.textContent = 'Public link offline — reconnecting';
+      statusText.style.color = 'var(--danger)';
+      urlRow.hidden = true;
+    }
+  } catch {
+    // server not reachable yet
+  }
+}
+
+function copyTunnelUrl() {
+  const url = document.getElementById('tunnelUrl').textContent;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.getElementById('tunnelCopyBtn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
+  });
+}
+
+// Poll every 4 seconds so the UI stays in sync
+pollTunnel();
+setInterval(pollTunnel, 4000);
+
 async function loadSites() {
   const res = await fetch(`${API}/api/sites`);
   const sites = await res.json();
