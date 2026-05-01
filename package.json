@@ -19,6 +19,7 @@
     "express": "^5.2.1",
     "http-proxy-middleware": "^3.0.5",
     "localtunnel": "^2.0.2",
+    "mongodb": "^7.2.0",
     "uuid": "^14.0.0"
   }
 }
