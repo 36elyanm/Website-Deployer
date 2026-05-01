@@ -66,7 +66,7 @@ function validateSourceUrl(url) {
 
 function validateTargetDomain(domain) {
   domain = domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
-  return /^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z]{2,})+$/.test(domain);
+  return /^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(domain);
 }
 
 function fetchSiteTitle(sourceUrl) {

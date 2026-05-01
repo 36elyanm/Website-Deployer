@@ -35,7 +35,87 @@
             <button class="btn-copy-url" id="tunnelCopyBtn" onclick="copyTunnelUrl()">Copy</button>
           </div>
         </div>
-        <p class="tunnel-hint" id="tunnelHint">Open this link on any device — phone, tablet, or another computer — to access the same dashboard.</p>
+        <p class="tunnel-hint">Open this link on any device to access the same dashboard.</p>
+      </section>
+
+      <!-- Free domain wizard -->
+      <section class="card free-domain-card">
+        <div class="free-domain-header" onclick="toggleFreeDomain()">
+          <div class="free-domain-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20M12 2a14.5 14.5 0 0 1 0 20M2 12h20"/></svg>
+            Get a Free Domain <span class="free-badge">FREE</span>
+          </div>
+          <svg class="chevron" id="freeDomainChevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+
+        <div class="free-domain-body" id="freeDomainBody" hidden>
+          <p class="free-domain-desc">Get a permanent <strong>yourname.is-a.dev</strong> subdomain for free. Takes about 24–48 hours to be approved.</p>
+
+          <div class="field">
+            <label for="fdSubdomain">Subdomain you want</label>
+            <div class="domain-input-row">
+              <input type="text" id="fdSubdomain" placeholder="myproject" autocomplete="off" spellcheck="false" oninput="updateFreeDomainPreview()" />
+              <span class="domain-suffix">.is-a.dev</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="fdGithub">Your GitHub username</label>
+            <input type="text" id="fdGithub" placeholder="yourusername" autocomplete="off" spellcheck="false" oninput="updateFreeDomainPreview()" />
+          </div>
+
+          <div class="field">
+            <label for="fdTarget">Points to (your app URL or tunnel link)</label>
+            <input type="text" id="fdTarget" placeholder="e.g. myapp.up.railway.app" autocomplete="off" spellcheck="false" oninput="updateFreeDomainPreview()" />
+            <span class="hint">Paste your Railway/Render URL, or copy the tunnel link above</span>
+          </div>
+
+          <div id="fdPreview" class="fd-preview" hidden>
+            <div class="fd-preview-label">Your domain will be:</div>
+            <div class="fd-preview-domain" id="fdPreviewDomain"></div>
+          </div>
+
+          <button class="btn-generate" id="fdGenerateBtn" onclick="generateFreeDomain()" disabled>
+            Generate Registration Files
+          </button>
+
+          <div id="fdSteps" hidden>
+            <hr class="divider" />
+            <div class="fd-steps-title">Follow these 3 steps:</div>
+
+            <div class="step">
+              <span class="step-num">1</span>
+              <h4>Fork the is-a.dev repository</h4>
+              <p>Click the button below to open it on GitHub, then click <strong>Fork</strong> (top right).</p>
+              <a class="btn-external" href="https://github.com/is-a-dev/register" target="_blank" rel="noopener">
+                Open is-a-dev/register on GitHub →
+              </a>
+            </div>
+
+            <div class="step">
+              <span class="step-num">2</span>
+              <h4>Create this file in your fork</h4>
+              <p>In your fork, go to the <code>domains/</code> folder and create a new file named:</p>
+              <div class="code-block" style="margin-left:0">
+                <button class="copy-btn" id="filenameCopyBtn" onclick="copyCode('filenameCopyBtn', document.getElementById('fdFilename').textContent)">Copy</button>
+                <span id="fdFilename"></span>
+              </div>
+              <p style="margin-top:10px">Paste this as the file contents:</p>
+              <div class="code-block" style="margin-left:0;white-space:pre" id="fdJsonBlock">
+                <button class="copy-btn" id="jsonCopyBtn" onclick="copyCode('jsonCopyBtn', document.getElementById('fdJson').textContent)">Copy</button><span id="fdJson"></span></div>
+            </div>
+
+            <div class="step">
+              <span class="step-num">3</span>
+              <h4>Open a Pull Request</h4>
+              <p>In your fork, click <strong>Contribute → Open pull request</strong>. The is-a.dev team will review and merge it, usually within 24–48 hours. Once merged, <strong id="fdFinalDomain"></strong> will work.</p>
+            </div>
+
+            <div class="note">
+              While you wait for approval, use the tunnel link above to share the dashboard with other devices instantly.
+            </div>
+          </div>
+        </div>
       </section>
 
       <section class="card form-card">
@@ -58,11 +138,11 @@
             <input
               type="text"
               id="targetDomain"
-              placeholder="e.g. myproject.com"
+              placeholder="e.g. myproject.is-a.dev"
               autocomplete="off"
               spellcheck="false"
             />
-            <span class="hint">The .com (or any TLD) domain you own</span>
+            <span class="hint">Enter your domain once the is-a.dev PR is approved</span>
           </div>
 
           <div id="formError" class="error-msg" hidden></div>
