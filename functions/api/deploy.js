@@ -64,16 +64,37 @@ export async function onRequestPost({ request, env }) {
   try {
     await ensureProject(projectName, cfg.accountId, cfg.token);
 
-    // Build multipart body for Cloudflare Pages deployment API
-    const cfForm = new FormData();
-    cfForm.append('manifest', JSON.stringify(manifest));
+    // Manually build multipart body — Workers' native FormData doesn't
+    // encode file parts correctly when calling Cloudflare's own API.
+    const boundary = crypto.randomUUID().replace(/-/g, '');
+    const enc = new TextEncoder();
+    const chunks = [];
+
+    const text = (s) => enc.encode(s);
+
+    // manifest field (plain text)
+    chunks.push(text(`--${boundary}\r\nContent-Disposition: form-data; name="manifest"\r\n\r\n${JSON.stringify(manifest)}\r\n`));
+
+    // one binary part per file, keyed by its SHA-256 hash
     for (const file of files) {
-      cfForm.append(file.hash, new Blob([file.content]), file.name);
+      chunks.push(text(`--${boundary}\r\nContent-Disposition: form-data; name="${file.hash}"; filename="${file.name}"\r\nContent-Type: application/octet-stream\r\n\r\n`));
+      chunks.push(new Uint8Array(file.content));
+      chunks.push(text('\r\n'));
     }
+    chunks.push(text(`--${boundary}--\r\n`));
+
+    const totalLen = chunks.reduce((n, c) => n + c.byteLength, 0);
+    const body = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
 
     const deployRes = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${cfg.accountId}/pages/projects/${projectName}/deployments`,
-      { method: 'POST', headers: { 'Authorization': `Bearer ${cfg.token}` }, body: cfForm }
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${cfg.token}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+        body,
+      }
     );
     const deployment = await deployRes.json();
 
