@@ -85,11 +85,17 @@
         </div>
       </div>
 
-      <!-- Site name -->
-      <div class="field">
-        <label for="siteName">Website Name</label>
-        <input type="text" id="siteName" placeholder="my-awesome-site" autocomplete="off" spellcheck="false" oninput="updateSlugPreview()" />
-        <span class="field-hint" id="slugPreview">Will deploy to: <strong id="slugText">—</strong>.pages.dev</span>
+      <!-- Domain picker -->
+      <div class="domain-picker">
+        <label class="domain-picker-label">Your Free Address</label>
+        <div class="domain-picker-row">
+          <input type="text" id="siteName" class="domain-picker-input" placeholder="my-site" autocomplete="off" spellcheck="false" oninput="updateSlugPreview()" />
+          <span class="domain-picker-suffix">.pages.dev</span>
+        </div>
+        <div class="domain-picker-preview" id="domainPickerPreview">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <span id="domainPickerFull">Type a name to claim your free address</span>
+        </div>
       </div>
 
       <!-- Custom domain (optional) -->
@@ -102,7 +108,7 @@
           <svg class="domain-input-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20M12 2a14.5 14.5 0 0 1 0 20M2 12h20"/></svg>
           <input type="text" id="customDomain" placeholder="yourdomain.com" autocomplete="off" spellcheck="false" />
         </div>
-        <span class="field-hint">Must be a domain already on your Cloudflare account. Leave blank to use the free <strong>.pages.dev</strong> URL.</span>
+        <span class="field-hint">Have a paid domain on Cloudflare? Enter it here to use that instead.</span>
       </div>
 
       <!-- Upload zone -->
@@ -152,85 +158,6 @@
           Deploying...
         </span>
       </button>
-    </section>
-
-    <!-- Free Domains Info -->
-    <section class="card domains-card">
-      <div class="card-header collapsible" onclick="toggleDomains()">
-        <div class="card-title">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20M12 2a14.5 14.5 0 0 1 0 20M2 12h20"/></svg>
-          Free &amp; Cheap Domain Options
-          <span class="chip chip-green">Info</span>
-        </div>
-        <svg class="chevron" id="domainsChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
-      </div>
-
-      <div id="domainsBody" class="domains-body" hidden>
-        <p class="domains-intro">Cloudflare Pages gives every site a <strong>.pages.dev</strong> subdomain for free. Here are all your real options:</p>
-
-        <div class="domain-grid">
-
-          <div class="domain-option free">
-            <div class="domain-option-header">
-              <span class="domain-name">.pages.dev</span>
-              <span class="chip chip-green">Free &amp; Instant</span>
-            </div>
-            <p>Auto-assigned by Cloudflare when you deploy. No signup, works immediately.</p>
-            <p class="domain-example">yoursite.pages.dev</p>
-          </div>
-
-          <div class="domain-option free">
-            <div class="domain-option-header">
-              <span class="domain-name">.is-a.dev</span>
-              <span class="chip chip-green">Free</span>
-            </div>
-            <p>Free subdomains for developers. Submit a PR to <strong>is-a-dev/register</strong> on GitHub. Approved within 24–48 h.</p>
-            <p class="domain-example">yoursite.is-a.dev</p>
-          </div>
-
-          <div class="domain-option free">
-            <div class="domain-option-header">
-              <span class="domain-name">.js.org</span>
-              <span class="chip chip-green">Free</span>
-            </div>
-            <p>Free subdomains for JavaScript projects. Submit a PR to <strong>js-org/js.org</strong>. Reviewed within a few days.</p>
-            <p class="domain-example">yourproject.js.org</p>
-          </div>
-
-          <div class="domain-option free">
-            <div class="domain-option-header">
-              <span class="domain-name">.eu.org</span>
-              <span class="chip chip-blue">Free (slow)</span>
-            </div>
-            <p>Free second-level domains, but approval can take weeks to months. Run by volunteers.</p>
-            <p class="domain-example">yoursite.eu.org</p>
-          </div>
-
-          <div class="domain-option paid">
-            <div class="domain-option-header">
-              <span class="domain-name">.com / .net / .org</span>
-              <span class="chip chip-orange">~$10–15/yr</span>
-            </div>
-            <p>Standard TLDs — not free, but very affordable. Register at Cloudflare Registrar, Namecheap, or Porkbun. Connect to Pages via a custom domain.</p>
-            <p class="domain-example">yoursite.com</p>
-          </div>
-
-          <div class="domain-option paid">
-            <div class="domain-option-header">
-              <span class="domain-name">.xyz / .site / .online</span>
-              <span class="chip chip-orange">from $1–3/yr</span>
-            </div>
-            <p>Cheap alternative TLDs. Often have first-year promos. Porkbun has great prices. Not free, but nearly so.</p>
-            <p class="domain-example">yoursite.xyz</p>
-          </div>
-
-        </div>
-
-        <div class="note-box">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <span>Truly free top-level domains (.com, .net etc.) don't exist — those require annual payment. The free options above are all <em>subdomains</em> on someone else's domain. The best free + instant option is always <strong>.pages.dev</strong> which you already get automatically.</span>
-        </div>
-      </div>
     </section>
 
     <!-- Deployed Sites -->

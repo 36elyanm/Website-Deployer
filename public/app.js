@@ -109,12 +109,21 @@ function showSettingsMsg(text, type) {
   setTimeout(() => { el.hidden = true; }, 5000);
 }
 
-// ── Slug preview ──────────────────────────────────────────────────────────────
+// ── Domain picker preview ─────────────────────────────────────────────────────
 
 function updateSlugPreview() {
-  const name = document.getElementById('siteName').value.trim();
-  const slug = slugify(name);
-  document.getElementById('slugText').textContent = slug || '—';
+  const name    = document.getElementById('siteName').value.trim();
+  const slug    = slugify(name);
+  const preview = document.getElementById('domainPickerPreview');
+  const full    = document.getElementById('domainPickerFull');
+
+  if (slug) {
+    full.textContent = `${slug}.pages.dev — yours for free`;
+    preview.classList.add('ready');
+  } else {
+    full.textContent = 'Type a name to claim your free address';
+    preview.classList.remove('ready');
+  }
   checkDeployReady();
 }
 
@@ -500,18 +509,6 @@ document.addEventListener('keydown', e => {
     document.getElementById('domainSaveBtn').click();
   }
 });
-
-// ── Free domains toggle ───────────────────────────────────────────────────────
-
-function toggleDomains() {
-  const body    = document.getElementById('domainsBody');
-  const chevron = document.getElementById('domainsChevron');
-  const header  = document.querySelector('.card-header.collapsible');
-  const open    = !body.hidden;
-  body.hidden   = open;
-  chevron.classList.toggle('open', !open);
-  header.classList.toggle('open', !open);
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
