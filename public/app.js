@@ -205,11 +205,17 @@ function setupFileInputs() {
     e.target.value = '';
   });
 
-  document.getElementById('zipInput').addEventListener('change', e => {
+  document.getElementById('zipInput').addEventListener('change', async e => {
     uploadMode = 'zip';
-    selectedFiles = Array.from(e.target.files).map(f => ({ name: f.name, path: f.name, file: f }));
-    renderFileList();
+    const zipFile = e.target.files[0];
+    if (!zipFile) return;
     e.target.value = '';
+    try {
+      selectedFiles = await extractZip(zipFile);
+      renderFileList();
+    } catch (err) {
+      alert('Could not read ZIP: ' + err.message);
+    }
   });
 }
 
@@ -279,12 +285,13 @@ async function deploysite() {
     const customDomain = document.getElementById('customDomain').value.trim();
     if (customDomain) fd.append('customDomain', customDomain);
 
-    if (uploadMode === 'zip') {
-      fd.append('zip', selectedFiles[0].file);
-    } else {
-      for (const f of selectedFiles) {
-        fd.append('files', f.file, f.path);
+    for (const f of selectedFiles) {
+      // Strip top-level folder from folder uploads so paths are relative to root
+      let filePath = f.path;
+      if (uploadMode === 'folder') {
+        filePath = filePath.replace(/^[^/]+\//, '');
       }
+      fd.append('files', f.file, filePath || f.name);
     }
 
     const res  = await fetch('/api/deploy', { method: 'POST', body: fd });
@@ -509,6 +516,49 @@ document.addEventListener('keydown', e => {
     document.getElementById('domainSaveBtn').click();
   }
 });
+
+// ── ZIP extraction (client-side via fflate) ───────────────────────────────────
+
+async function extractZip(zipFile) {
+  const buffer = await zipFile.arrayBuffer();
+  const uint8 = new Uint8Array(buffer);
+
+  return new Promise((resolve, reject) => {
+    fflate.unzip(uint8, (err, unzipped) => {
+      if (err) return reject(err);
+
+      const allPaths = Object.keys(unzipped).filter(p => !p.endsWith('/'));
+
+      // Detect and strip common top-level folder prefix
+      const prefix = commonPrefix(allPaths);
+
+      const files = [];
+      for (const [rawPath, content] of Object.entries(unzipped)) {
+        if (rawPath.endsWith('/')) continue;
+        const cleanPath = rawPath.slice(prefix.length) || rawPath;
+        if (!cleanPath) continue;
+        files.push({
+          name: cleanPath,
+          path: cleanPath,
+          file: new File([content], cleanPath, { type: 'application/octet-stream' }),
+        });
+      }
+      resolve(files);
+    });
+  });
+}
+
+function commonPrefix(paths) {
+  if (!paths.length) return '';
+  const parts = paths[0].split('/');
+  let prefix = '';
+  for (let i = 1; i < parts.length; i++) {
+    const candidate = parts.slice(0, i).join('/') + '/';
+    if (paths.every(p => p.startsWith(candidate))) prefix = candidate;
+    else break;
+  }
+  return prefix;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
