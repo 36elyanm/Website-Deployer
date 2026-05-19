@@ -1,291 +1,436 @@
-const API = '';
+// ── State ────────────────────────────────────────────────────────────────────
 
-// ── Tunnel banner ────────────────────────────────────────────────────────────
+let selectedFiles = []; // [{name, path, file}]
+let uploadMode = null;  // 'files' | 'folder' | 'zip'
+let renameSiteId = null;
 
-async function pollTunnel() {
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+(async function init() {
+  await loadConfig();
+  await loadSites();
+  setupDropZone();
+  setupFileInputs();
+})();
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+function toggleSettings() {
+  const card = document.getElementById('settingsCard');
+  const btn  = document.getElementById('settingsBtn');
+  const open = !card.hidden;
+  card.hidden = open;
+  btn.classList.toggle('active', !open);
+}
+
+async function loadConfig() {
   try {
-    const res = await fetch(`${API}/api/tunnel`);
-    const { url, status } = await res.json();
-
-    const dot        = document.getElementById('tunnelDot');
-    const statusText = document.getElementById('tunnelStatusText');
-    const urlRow     = document.getElementById('tunnelUrlRow');
-    const urlEl      = document.getElementById('tunnelUrl');
-
-    dot.className = 'tunnel-dot ' + status;
-
-    if (status === 'online' && url) {
-      statusText.textContent = 'Public link active';
-      statusText.style.color = 'var(--success)';
-      urlEl.textContent = url;
-      urlEl.href = url;
-      urlRow.hidden = false;
-      // Pre-fill the free domain target field with tunnel URL
-      const fdTarget = document.getElementById('fdTarget');
-      if (!fdTarget.value) {
-        fdTarget.value = url.replace(/^https?:\/\//, '');
-        updateFreeDomainPreview();
-      }
-    } else if (status === 'connecting') {
-      statusText.textContent = 'Getting your public link...';
-      statusText.style.color = '';
-      urlRow.hidden = true;
-    } else {
-      statusText.textContent = 'Public link offline — reconnecting';
-      statusText.style.color = 'var(--danger)';
-      urlRow.hidden = true;
-    }
-  } catch { /* server not ready */ }
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    if (cfg.accountId) document.getElementById('cfAccountId').value = cfg.accountId;
+    updateCfStatus(cfg.hasToken ? 'ok' : null);
+  } catch { /* silent */ }
 }
 
-function copyTunnelUrl() {
-  const url = document.getElementById('tunnelUrl').textContent;
-  navigator.clipboard.writeText(url).then(() => {
-    const btn = document.getElementById('tunnelCopyBtn');
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
-  });
-}
-
-pollTunnel();
-setInterval(pollTunnel, 4000);
-
-// ── Free domain wizard ───────────────────────────────────────────────────────
-
-function toggleFreeDomain() {
-  const body    = document.getElementById('freeDomainBody');
-  const chevron = document.getElementById('freeDomainChevron');
-  const open    = !body.hidden;
-  body.hidden   = open;
-  chevron.classList.toggle('open', !open);
-}
-
-function updateFreeDomainPreview() {
-  const sub     = document.getElementById('fdSubdomain').value.trim().toLowerCase();
-  const github  = document.getElementById('fdGithub').value.trim();
-  const target  = document.getElementById('fdTarget').value.trim().replace(/^https?:\/\//, '');
-  const preview = document.getElementById('fdPreview');
-  const previewDomain = document.getElementById('fdPreviewDomain');
-  const btn     = document.getElementById('fdGenerateBtn');
-
-  if (sub) {
-    preview.hidden = false;
-    previewDomain.textContent = `${sub}.is-a.dev`;
+function updateCfStatus(state) {
+  const el = document.getElementById('cfStatus');
+  if (state === 'ok') {
+    el.textContent = 'Connected';
+    el.className = 'badge-status ok';
+    el.hidden = false;
+  } else if (state === 'error') {
+    el.textContent = 'Invalid credentials';
+    el.className = 'badge-status error';
+    el.hidden = false;
   } else {
-    preview.hidden = true;
+    el.textContent = '';
+    el.hidden = true;
+  }
+}
+
+async function saveSettings() {
+  const accountId = document.getElementById('cfAccountId').value.trim();
+  const token     = document.getElementById('cfToken').value.trim();
+  const msg       = document.getElementById('settingsMsg');
+
+  if (!accountId || !token) {
+    showSettingsMsg('Please enter both Account ID and API Token.', 'error');
+    return;
   }
 
-  btn.disabled = !(sub && github && target);
+  const res  = await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accountId, token }),
+  });
+  const data = await res.json();
+
+  if (data.ok) {
+    showSettingsMsg('Credentials saved.', 'success');
+    updateCfStatus('ok');
+    document.getElementById('cfToken').value = '';
+  } else {
+    showSettingsMsg(data.error || 'Could not save.', 'error');
+  }
 }
 
-function generateFreeDomain() {
-  const sub    = document.getElementById('fdSubdomain').value.trim().toLowerCase();
-  const github = document.getElementById('fdGithub').value.trim();
-  const target = document.getElementById('fdTarget').value.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+async function verifyCreds() {
+  const btn  = document.getElementById('verifyText');
+  btn.textContent = 'Verifying...';
 
-  const json = JSON.stringify({
-    description: `${sub}.is-a.dev — deployed via Website Deployer`,
-    repo: `https://github.com/${github}`,
-    owner: { username: github },
-    record: { CNAME: target }
-  }, null, 2);
+  const accountId = document.getElementById('cfAccountId').value.trim();
+  const token     = document.getElementById('cfToken').value.trim();
 
-  document.getElementById('fdFilename').textContent = `${sub}.json`;
-  document.getElementById('fdJson').textContent = json;
-  document.getElementById('fdFinalDomain').textContent = `${sub}.is-a.dev`;
-  document.getElementById('fdSteps').hidden = false;
+  if (accountId || token) await saveSettings();
 
-  document.getElementById('fdSteps').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try {
+    const res  = await fetch('/api/config/verify', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      showSettingsMsg('Connection verified! Cloudflare credentials are valid.', 'success');
+      updateCfStatus('ok');
+    } else {
+      showSettingsMsg(data.error || 'Verification failed.', 'error');
+      updateCfStatus('error');
+    }
+  } catch {
+    showSettingsMsg('Network error.', 'error');
+  } finally {
+    btn.textContent = 'Verify Connection';
+  }
 }
 
-function copyCode(btnId, text) {
-  navigator.clipboard.writeText(text).then(() => {
-    const btn = document.getElementById(btnId);
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
+function showSettingsMsg(text, type) {
+  const el = document.getElementById('settingsMsg');
+  el.textContent = text;
+  el.className = `settings-msg ${type}`;
+  el.hidden = false;
+  setTimeout(() => { el.hidden = true; }, 5000);
+}
+
+// ── Slug preview ──────────────────────────────────────────────────────────────
+
+function updateSlugPreview() {
+  const name = document.getElementById('siteName').value.trim();
+  const slug = slugify(name);
+  document.getElementById('slugText').textContent = slug || '—';
+  checkDeployReady();
+}
+
+function slugify(str) {
+  return str.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 63) || '';
+}
+
+// ── Drop zone ─────────────────────────────────────────────────────────────────
+
+function setupDropZone() {
+  const zone = document.getElementById('uploadZone');
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over'); });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    handleDroppedItems(e.dataTransfer.items || e.dataTransfer.files);
   });
 }
 
-// ── Sites list ───────────────────────────────────────────────────────────────
+async function handleDroppedItems(items) {
+  const files = [];
+  const traverse = async (entry, prefix = '') => {
+    if (entry.isFile) {
+      await new Promise(resolve => {
+        entry.file(f => {
+          files.push({ name: f.name, path: prefix + f.name, file: f });
+          resolve();
+        });
+      });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      await new Promise(resolve => {
+        reader.readEntries(async entries => {
+          for (const e of entries) await traverse(e, prefix + entry.name + '/');
+          resolve();
+        });
+      });
+    }
+  };
+
+  if (items instanceof DataTransferItemList) {
+    for (const item of items) {
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) await traverse(entry);
+    }
+  } else {
+    for (const f of items) {
+      files.push({ name: f.name, path: f.name, file: f });
+    }
+  }
+
+  if (files.length > 0) {
+    uploadMode = files.length === 1 && files[0].name.endsWith('.zip') ? 'zip' : 'files';
+    selectedFiles = files;
+    renderFileList();
+  }
+}
+
+// ── File inputs ───────────────────────────────────────────────────────────────
+
+function setupFileInputs() {
+  document.getElementById('fileInput').addEventListener('change', e => {
+    uploadMode = 'files';
+    selectedFiles = Array.from(e.target.files).map(f => ({ name: f.name, path: f.name, file: f }));
+    renderFileList();
+    e.target.value = '';
+  });
+
+  document.getElementById('folderInput').addEventListener('change', e => {
+    uploadMode = 'folder';
+    selectedFiles = Array.from(e.target.files).map(f => ({
+      name: f.name,
+      path: f.webkitRelativePath || f.name,
+      file: f,
+    }));
+    renderFileList();
+    e.target.value = '';
+  });
+
+  document.getElementById('zipInput').addEventListener('change', e => {
+    uploadMode = 'zip';
+    selectedFiles = Array.from(e.target.files).map(f => ({ name: f.name, path: f.name, file: f }));
+    renderFileList();
+    e.target.value = '';
+  });
+}
+
+function renderFileList() {
+  const zone      = document.getElementById('uploadZone');
+  const iconEl    = document.getElementById('uploadIconEl');
+  const titleEl   = document.getElementById('uploadTitle');
+  const subEl     = document.getElementById('uploadSub');
+  const listEl    = document.getElementById('fileList');
+
+  if (selectedFiles.length === 0) {
+    zone.classList.remove('has-files');
+    listEl.hidden = true;
+    titleEl.textContent = 'Drop files here';
+    subEl.textContent = 'or choose an option below';
+    checkDeployReady();
+    return;
+  }
+
+  zone.classList.add('has-files');
+  const label = uploadMode === 'zip' ? 'ZIP archive selected' : `${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''} selected`;
+  titleEl.textContent = label;
+  subEl.textContent = 'Ready to deploy';
+
+  listEl.innerHTML = selectedFiles.slice(0, 20).map(f => `
+    <div class="file-item">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="file-name">${esc(f.path)}</span>
+      <span class="file-size">${formatBytes(f.file.size)}</span>
+    </div>`).join('') + (selectedFiles.length > 20 ? `<div class="file-item" style="color:var(--text4)">… and ${selectedFiles.length - 20} more</div>` : '');
+
+  listEl.hidden = false;
+  checkDeployReady();
+}
+
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// ── Deploy ────────────────────────────────────────────────────────────────────
+
+function checkDeployReady() {
+  const name  = document.getElementById('siteName').value.trim();
+  const btn   = document.getElementById('deployBtn');
+  btn.disabled = !(name && selectedFiles.length > 0);
+}
+
+async function deploysite() {
+  const siteName = document.getElementById('siteName').value.trim();
+  const errEl    = document.getElementById('deployError');
+  const okEl     = document.getElementById('deploySuccess');
+  const btn      = document.getElementById('deployBtn');
+  const content  = document.getElementById('deployBtnContent');
+  const spinner  = document.getElementById('deploySpinner');
+
+  errEl.hidden = true;
+  okEl.hidden  = true;
+  btn.disabled = true;
+  content.hidden = true;
+  spinner.hidden = false;
+
+  try {
+    const fd = new FormData();
+    fd.append('siteName', siteName);
+
+    if (uploadMode === 'zip') {
+      fd.append('zip', selectedFiles[0].file);
+    } else {
+      for (const f of selectedFiles) {
+        fd.append('files', f.file, f.path);
+      }
+    }
+
+    const res  = await fetch('/api/deploy', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Deployment failed.';
+      errEl.hidden = false;
+      return;
+    }
+
+    okEl.innerHTML = `
+      Deployed! Your site is live at
+      <a href="${esc(data.url)}" target="_blank" rel="noopener">${esc(data.url)}</a>
+      — it may take a minute to propagate.`;
+    okEl.hidden = false;
+
+    // Reset upload
+    selectedFiles = [];
+    uploadMode = null;
+    renderFileList();
+    document.getElementById('siteName').value = '';
+    updateSlugPreview();
+
+    await loadSites();
+  } catch (err) {
+    errEl.textContent = 'Network error: ' + err.message;
+    errEl.hidden = false;
+  } finally {
+    content.hidden = false;
+    spinner.hidden = true;
+    btn.disabled = false;
+    checkDeployReady();
+  }
+}
+
+// ── Sites ─────────────────────────────────────────────────────────────────────
 
 async function loadSites() {
-  const res   = await fetch(`${API}/api/sites`);
-  const sites = await res.json();
-  renderSites(sites);
+  try {
+    const res   = await fetch('/api/sites');
+    const sites = await res.json();
+    renderSites(sites);
+  } catch { /* silent */ }
 }
 
 function renderSites(sites) {
   const list  = document.getElementById('sitesList');
   const empty = document.getElementById('emptyState');
-  const count = document.getElementById('siteCount');
+  document.getElementById('siteCount').textContent = sites.length;
 
-  count.textContent = sites.length;
   list.querySelectorAll('.site-card').forEach(el => el.remove());
 
-  if (sites.length === 0) { empty.hidden = false; return; }
+  if (sites.length === 0) {
+    if (!list.contains(empty)) list.appendChild(empty);
+    empty.hidden = false;
+    return;
+  }
   empty.hidden = true;
-  sites.forEach(site => list.appendChild(buildSiteCard(site)));
+  sites.forEach(s => list.appendChild(buildSiteCard(s)));
 }
 
 function buildSiteCard(site) {
-  const div  = document.createElement('div');
-  div.className   = 'site-card';
-  div.dataset.id  = site.id;
+  const div = document.createElement('div');
+  div.className = 'site-card';
+  div.dataset.id = site.id;
 
-  const date = new Date(site.createdAt).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric'
-  });
+  const date = new Date(site.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   div.innerHTML = `
     <div class="site-top">
       <div class="site-info">
-        <div class="site-title"><span class="status-dot"></span>${escHtml(site.title)}</div>
-        <div class="site-urls">
-          <div class="site-url"><span class="label">Source</span><span class="source-link">${escHtml(site.sourceUrl)}</span></div>
-          <div class="site-url"><span class="label">Domain</span><span class="target-link">${escHtml(site.targetDomain)}</span></div>
+        <div class="site-name">
+          <span class="live-dot"></span>
+          ${esc(site.displayName || site.projectName)}
         </div>
+        <div class="site-url-row">
+          <span class="site-url-label">URL</span>
+          <a class="site-url-link" href="${esc(site.url)}" target="_blank" rel="noopener">${esc(site.url)}</a>
+        </div>
+        <div class="site-url-row">
+          <span class="site-url-label">Project</span>
+          <span class="site-url-link" style="color:var(--text3)">${esc(site.projectName)}</span>
+        </div>
+        <div class="site-meta">${site.fileCount} file${site.fileCount !== 1 ? 's' : ''} · Deployed ${date}</div>
       </div>
-    </div>
-    <div class="site-bottom">
-      <div class="site-meta">Added ${date}</div>
       <div class="site-actions">
-        <button class="btn-icon primary" onclick="showInstructions('${site.id}')">Setup Guide</button>
-        <button class="btn-icon danger"  onclick="deleteSite('${site.id}')">Remove</button>
+        <button class="btn-sm accent" onclick="openRenameModal('${site.id}', ${JSON.stringify(esc(site.displayName || site.projectName))})">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Rename
+        </button>
+        <button class="btn-sm danger" onclick="deleteSite('${site.id}')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          Remove
+        </button>
       </div>
     </div>`;
   return div;
 }
 
-function escHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// ── Deploy form ──────────────────────────────────────────────────────────────
-
-document.getElementById('deployForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  const sourceUrl    = document.getElementById('sourceUrl').value.trim();
-  const targetDomain = document.getElementById('targetDomain').value.trim();
-  const errEl        = document.getElementById('formError');
-  const btn          = document.getElementById('submitBtn');
-  const btnText      = btn.querySelector('.btn-text');
-  const btnSpinner   = btn.querySelector('.btn-spinner');
-
-  errEl.hidden = true;
-  btnText.hidden = true;
-  btnSpinner.hidden = false;
-  btn.disabled = true;
-
-  try {
-    const res  = await fetch(`${API}/api/sites`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceUrl, targetDomain }),
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      errEl.textContent = data.error || 'Something went wrong.';
-      errEl.hidden = false;
-      return;
-    }
-
-    document.getElementById('sourceUrl').value    = '';
-    document.getElementById('targetDomain').value = '';
-    await loadSites();
-    showInstructions(data.id);
-  } catch {
-    errEl.textContent = 'Network error. Is the server running?';
-    errEl.hidden = false;
-  } finally {
-    btnText.hidden = false;
-    btnSpinner.hidden = true;
-    btn.disabled = false;
-  }
-});
-
-// ── Delete / instructions ────────────────────────────────────────────────────
-
 async function deleteSite(id) {
-  if (!confirm('Remove this site deployment?')) return;
-  await fetch(`${API}/api/sites/${id}`, { method: 'DELETE' });
+  if (!confirm('Remove this site from the dashboard? (The Cloudflare Pages project itself is not deleted.)')) return;
+  await fetch(`/api/sites/${id}`, { method: 'DELETE' });
   await loadSites();
 }
 
-async function showInstructions(siteId) {
-  const sites    = await fetch(`${API}/api/sites`).then(r => r.json());
-  const site     = sites.find(s => s.id === siteId);
-  if (!site) return;
+// ── Rename Modal ──────────────────────────────────────────────────────────────
 
-  const { config } = await fetch(`${API}/api/sites/${siteId}/nginx`).then(r => r.json());
-  const isNetlify   = new URL(site.sourceUrl).hostname.endsWith('.netlify.app');
+function openRenameModal(id, currentName) {
+  renameSiteId = id;
+  document.getElementById('renameInput').value = currentName;
+  document.getElementById('renameModal').hidden = false;
+  document.getElementById('renameInput').focus();
 
-  document.getElementById('modalTitle').textContent = `Setup: ${site.targetDomain}`;
-  document.getElementById('modalBody').innerHTML    = buildInstructions(site, config, isNetlify);
-  document.getElementById('modal').hidden           = false;
+  document.getElementById('renameSaveBtn').onclick = async () => {
+    const newName = document.getElementById('renameInput').value.trim();
+    if (!newName) return;
+    await fetch(`/api/sites/${renameSiteId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName: newName }),
+    });
+    closeRenameModal();
+    await loadSites();
+  };
 }
 
-function buildInstructions(site, nginxConfig, isNetlify) {
-  const escaped  = escHtml(nginxConfig);
-  const serverIp = 'YOUR_SERVER_IP';
-
-  return `
-    <div class="step">
-      <span class="step-num">1</span>
-      <h4>Point your domain's DNS to this server</h4>
-      <p>In your domain registrar or DNS provider, add these records:</p>
-      <table class="dns-table">
-        <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>TTL</th></tr></thead>
-        <tbody>
-          <tr><td>A</td><td>@</td><td>${serverIp}</td><td>Auto</td></tr>
-          <tr><td>A</td><td>www</td><td>${serverIp}</td><td>Auto</td></tr>
-        </tbody>
-      </table>
-      <p>Replace <strong>${serverIp}</strong> with the public IP of the machine running this app.</p>
-    </div>
-    <hr class="divider"/>
-    <div class="step">
-      <span class="step-num">2</span>
-      <h4>Run this app on port 80</h4>
-      <div class="code-block">
-        <button class="copy-btn" onclick="copyText(this,'PORT=80 node server.js')">Copy</button>
-        PORT=80 node server.js
-      </div>
-    </div>
-    <hr class="divider"/>
-    <div class="step">
-      <span class="step-num">3</span>
-      <h4>How the proxy works</h4>
-      <p>Visitors to <strong>${site.targetDomain}</strong> are transparently forwarded to <strong>${site.sourceUrl}</strong>.</p>
-    </div>
-    <hr class="divider"/>
-    <div class="step">
-      <span class="step-num">4</span>
-      <h4>(Optional) Nginx + HTTPS</h4>
-      <div class="code-block" style="white-space:pre;overflow-x:auto">
-        <button class="copy-btn" onclick="copyText(this,\`${nginxConfig.replace(/`/g,'\\`')}\`)">Copy</button>${escaped}</div>
-      <div class="code-block" style="margin-top:10px">
-        <button class="copy-btn" onclick="copyText(this,'sudo certbot --nginx -d ${site.targetDomain}')">Copy</button>
-        sudo certbot --nginx -d ${site.targetDomain}
-      </div>
-    </div>
-    ${isNetlify
-      ? `<hr class="divider"/><div class="note"><strong>Netlify tip:</strong> You can also add <em>${site.targetDomain}</em> as a custom domain directly in the Netlify dashboard — no proxy needed.</div>`
-      : `<hr class="divider"/><div class="note"><strong>GitHub Pages tip:</strong> Set <em>${site.targetDomain}</em> as your custom domain in repository Settings → Pages.</div>`}`;
+function closeRenameModal() {
+  document.getElementById('renameModal').hidden = true;
+  renameSiteId = null;
 }
 
-function closeModal() { document.getElementById('modal').hidden = true; }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeRenameModal();
+  if (e.key === 'Enter' && !document.getElementById('renameModal').hidden) {
+    document.getElementById('renameSaveBtn').click();
+  }
+});
 
-function copyText(btn, text) {
-  navigator.clipboard.writeText(text).then(() => {
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
-  });
+// ── Free domains toggle ───────────────────────────────────────────────────────
+
+function toggleDomains() {
+  const body    = document.getElementById('domainsBody');
+  const chevron = document.getElementById('domainsChevron');
+  const header  = document.querySelector('.card-header.collapsible');
+  const open    = !body.hidden;
+  body.hidden   = open;
+  chevron.classList.toggle('open', !open);
+  header.classList.toggle('open', !open);
 }
 
-loadSites();
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

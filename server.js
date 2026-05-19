@@ -1,250 +1,263 @@
 const express = require('express');
-const { createProxyMiddleware } = require('http-proxy-middleware');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
-const http = require('http');
-const localtunnel = require('localtunnel');
+const crypto = require('crypto');
+const multer = require('multer');
+const AdmZip = require('adm-zip');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'sites.json');
+const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 
-// Tunnel state shared with the status API
-let tunnelUrl = null;
-let tunnelStatus = 'connecting'; // 'connecting' | 'online' | 'offline'
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 app.use(cors());
 app.use(express.json());
-
 app.use((req, res, next) => {
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
   next();
 });
-
-app.get('/robots.txt', (req, res) => {
-  res.type('text/plain');
-  res.send('User-agent: *\nDisallow: /\n');
-});
-
 app.use(express.static(path.join(__dirname, 'public')));
 
-function loadSites() {
+function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function loadSites() {
+  ensureDataDir();
   if (!fs.existsSync(DATA_FILE)) return [];
-  try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return []; }
 }
 
 function saveSites(sites) {
+  ensureDataDir();
   fs.writeFileSync(DATA_FILE, JSON.stringify(sites, null, 2));
 }
 
-function normalizeSourceUrl(url) {
-  url = url.trim();
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    url = 'https://' + url;
-  }
-  return url.replace(/\/$/, '');
+function loadConfig() {
+  ensureDataDir();
+  if (!fs.existsSync(CONFIG_FILE)) return {};
+  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { return {}; }
 }
 
-function validateSourceUrl(url) {
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname;
-    return host.endsWith('.netlify.app') || host.endsWith('.github.io');
-  } catch {
-    return false;
-  }
+function saveConfig(cfg) {
+  ensureDataDir();
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
 }
 
-function validateTargetDomain(domain) {
-  domain = domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
-  return /^([a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(domain);
+function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 63) || 'my-site';
 }
 
-function fetchSiteTitle(sourceUrl) {
-  return new Promise((resolve) => {
-    const protocol = sourceUrl.startsWith('https') ? https : http;
-    const req = protocol.get(sourceUrl, { timeout: 5000 }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        const match = data.match(/<title[^>]*>([^<]+)<\/title>/i);
-        resolve(match ? match[1].trim() : null);
-      });
-    });
-    req.on('error', () => resolve(null));
-    req.on('timeout', () => { req.destroy(); resolve(null); });
+async function cfFetch(path, token, opts = {}) {
+  const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+    ...opts,
+    headers: { 'Authorization': `Bearer ${token}`, ...(opts.headers || {}) },
   });
+  return res.json();
 }
 
-// API: tunnel status
-app.get('/api/tunnel', (req, res) => {
-  res.json({ url: tunnelUrl, status: tunnelStatus });
-});
+async function ensurePagesProject(projectName, accountId, token) {
+  const existing = await cfFetch(`/accounts/${accountId}/pages/projects/${projectName}`, token);
+  if (existing.success) return existing.result;
 
-// API: list all sites
-app.get('/api/sites', (req, res) => {
-  res.json(loadSites());
-});
+  const created = await cfFetch(`/accounts/${accountId}/pages/projects`, token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: projectName, production_branch: 'main' }),
+  });
 
-// API: add a new site
-app.post('/api/sites', async (req, res) => {
-  const { sourceUrl: rawSource, targetDomain: rawTarget } = req.body;
+  if (!created.success) throw new Error(created.errors?.[0]?.message || 'Failed to create project');
+  return created.result;
+}
 
-  if (!rawSource || !rawTarget) {
-    return res.status(400).json({ error: 'sourceUrl and targetDomain are required.' });
+async function deployFiles(projectName, accountId, token, files) {
+  // files: [{path: '/index.html', content: Buffer}, ...]
+  const manifest = {};
+  for (const file of files) {
+    const hash = crypto.createHash('sha256').update(file.content).digest('hex');
+    file.hash = hash;
+    manifest[file.path] = hash;
   }
 
-  const sourceUrl = normalizeSourceUrl(rawSource);
-  const targetDomain = rawTarget.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const boundary = `----FormBoundary${crypto.randomBytes(16).toString('hex')}`;
+  const parts = [];
 
-  if (!validateSourceUrl(sourceUrl)) {
-    return res.status(400).json({ error: 'Source URL must be a .netlify.app or .github.io address.' });
-  }
-
-  if (!validateTargetDomain(targetDomain)) {
-    return res.status(400).json({ error: 'Invalid target domain format.' });
-  }
-
-  const sites = loadSites();
-
-  if (sites.some(s => s.targetDomain === targetDomain)) {
-    return res.status(409).json({ error: 'That target domain is already registered.' });
-  }
-
-  const title = await fetchSiteTitle(sourceUrl);
-
-  const site = {
-    id: uuidv4(),
-    sourceUrl,
-    targetDomain,
-    title: title || new URL(sourceUrl).hostname,
-    createdAt: new Date().toISOString(),
-    status: 'active',
+  const addField = (name, value, contentType = 'application/octet-stream', filename = null) => {
+    const cd = filename
+      ? `Content-Disposition: form-data; name="${name}"; filename="${filename}"`
+      : `Content-Disposition: form-data; name="${name}"`;
+    const ct = `Content-Type: ${contentType}`;
+    parts.push(Buffer.from(`--${boundary}\r\n${cd}\r\n${ct}\r\n\r\n`));
+    parts.push(typeof value === 'string' ? Buffer.from(value) : value);
+    parts.push(Buffer.from('\r\n'));
   };
 
-  sites.push(site);
-  saveSites(sites);
+  addField('manifest', JSON.stringify(manifest), 'application/json');
+  for (const file of files) {
+    const fname = file.path.replace(/^\//, '');
+    addField(file.hash, file.content, 'application/octet-stream', fname);
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
 
-  res.status(201).json(site);
+  const body = Buffer.concat(parts);
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}/deployments`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body,
+    }
+  );
+  return res.json();
+}
+
+// ── Config API ────────────────────────────────────────────────────────────────
+
+app.get('/api/config', (req, res) => {
+  const cfg = loadConfig();
+  res.json({ accountId: cfg.accountId || '', hasToken: !!cfg.token });
 });
 
-// API: delete a site
+app.post('/api/config', (req, res) => {
+  const { accountId, token } = req.body;
+  if (!accountId || !token) return res.status(400).json({ error: 'accountId and token are required.' });
+  saveConfig({ accountId: accountId.trim(), token: token.trim() });
+  res.json({ ok: true });
+});
+
+app.post('/api/config/verify', async (req, res) => {
+  const cfg = loadConfig();
+  if (!cfg.token || !cfg.accountId) return res.status(400).json({ error: 'No credentials saved.' });
+  try {
+    const result = await cfFetch(`/accounts/${cfg.accountId}/pages/projects?per_page=1`, cfg.token);
+    if (result.success) return res.json({ ok: true });
+    return res.status(401).json({ error: result.errors?.[0]?.message || 'Invalid credentials.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Sites API ─────────────────────────────────────────────────────────────────
+
+app.get('/api/sites', (req, res) => res.json(loadSites()));
+
+app.patch('/api/sites/:id', (req, res) => {
+  const { displayName } = req.body;
+  const sites = loadSites();
+  const site = sites.find(s => s.id === req.params.id);
+  if (!site) return res.status(404).json({ error: 'Not found.' });
+  if (displayName) site.displayName = displayName.trim().slice(0, 80);
+  saveSites(sites);
+  res.json(site);
+});
+
 app.delete('/api/sites/:id', (req, res) => {
   const sites = loadSites();
   const idx = sites.findIndex(s => s.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Site not found.' });
+  if (idx === -1) return res.status(404).json({ error: 'Not found.' });
   const [removed] = sites.splice(idx, 1);
   saveSites(sites);
   res.json(removed);
 });
 
-// API: get nginx config for a site
-app.get('/api/sites/:id/nginx', (req, res) => {
-  const sites = loadSites();
-  const site = sites.find(s => s.id === req.params.id);
-  if (!site) return res.status(404).json({ error: 'Site not found.' });
+// ── Deploy API ────────────────────────────────────────────────────────────────
 
-  const sourceHost = new URL(site.sourceUrl).hostname;
-  const config = `server {
-    listen 80;
-    server_name ${site.targetDomain} www.${site.targetDomain};
-
-    location / {
-        proxy_pass ${site.sourceUrl};
-        proxy_set_header Host ${sourceHost};
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_ssl_server_name on;
-
-        sub_filter '${sourceHost}' '${site.targetDomain}';
-        sub_filter_once off;
-        sub_filter_types text/html text/css text/javascript application/javascript;
-    }
-}
-
-server {
-    listen 80;
-    server_name www.${site.targetDomain};
-    return 301 http://${site.targetDomain}$request_uri;
-}`;
-
-  res.json({ config });
-});
-
-// Live proxy: forward requests based on Host header
-app.use((req, res, next) => {
-  const host = req.hostname;
-  const sites = loadSites();
-  const site = sites.find(s => s.targetDomain === host || `www.${s.targetDomain}` === host);
-
-  if (!site) return next();
-
-  const proxy = createProxyMiddleware({
-    target: site.sourceUrl,
-    changeOrigin: true,
-    secure: true,
-    on: {
-      error: (err, req, res) => {
-        console.error('Proxy error:', err.message);
-        res.status(502).send('Bad Gateway: could not reach ' + site.sourceUrl);
-      },
-    },
-  });
-
-  proxy(req, res, next);
-});
-
-// Start server then open tunnel
-app.listen(PORT, async () => {
-  console.log(`Website Deployer running on http://localhost:${PORT}`);
-
-  // On Glitch, the public URL is already known — no tunnel needed
-  if (process.env.PROJECT_DOMAIN) {
-    tunnelUrl = `https://${process.env.PROJECT_DOMAIN}.glitch.me`;
-    tunnelStatus = 'online';
-    console.log(`Glitch URL: ${tunnelUrl}`);
-    return;
+app.post('/api/deploy', upload.fields([
+  { name: 'files', maxCount: 500 },
+  { name: 'zip', maxCount: 1 },
+]), async (req, res) => {
+  const cfg = loadConfig();
+  if (!cfg.token || !cfg.accountId) {
+    return res.status(400).json({ error: 'Cloudflare credentials not configured. Set them in Settings first.' });
   }
 
-  if (process.env.NO_TUNNEL) return;
+  const siteName = (req.body.siteName || 'my-site').trim();
+  const projectName = slugify(siteName);
 
-  async function openTunnel() {
+  let files = [];
+
+  // Handle zip upload
+  if (req.files?.zip?.[0]) {
     try {
-      tunnelStatus = 'connecting';
-      const tunnel = await localtunnel({ port: PORT });
-      tunnelUrl = tunnel.url;
-      tunnelStatus = 'online';
-      console.log(`Public URL: ${tunnel.url}`);
-
-      tunnel.on('close', () => {
-        console.log('Tunnel closed, reconnecting...');
-        tunnelStatus = 'offline';
-        tunnelUrl = null;
-        setTimeout(openTunnel, 3000);
-      });
-
-      tunnel.on('error', (err) => {
-        console.error('Tunnel error:', err.message);
-        tunnelStatus = 'offline';
-        tunnelUrl = null;
-        setTimeout(openTunnel, 5000);
-      });
+      const zip = new AdmZip(req.files.zip[0].buffer);
+      for (const entry of zip.getEntries()) {
+        if (entry.isDirectory) continue;
+        let entryPath = entry.entryName.replace(/^[^/]+\//, ''); // strip top-level folder
+        if (!entryPath) continue;
+        files.push({ path: '/' + entryPath, content: entry.getData() });
+      }
     } catch (err) {
-      console.error('Could not open tunnel:', err.message);
-      tunnelStatus = 'offline';
-      setTimeout(openTunnel, 10000);
+      return res.status(400).json({ error: 'Could not read zip file: ' + err.message });
     }
   }
 
-  openTunnel();
+  // Handle individual file uploads
+  if (req.files?.files?.length) {
+    for (const f of req.files.files) {
+      const filePath = '/' + (f.originalname || 'index.html');
+      files.push({ path: filePath, content: f.buffer });
+    }
+  }
+
+  if (files.length === 0) {
+    return res.status(400).json({ error: 'No files provided.' });
+  }
+
+  // Ensure there is an index.html at root
+  const hasIndex = files.some(f => f.path === '/index.html');
+  if (!hasIndex) {
+    // Try to find any .html file and rename to index.html if only one
+    const htmlFiles = files.filter(f => f.path.endsWith('.html'));
+    if (htmlFiles.length === 1) {
+      htmlFiles[0].path = '/index.html';
+    }
+  }
+
+  try {
+    await ensurePagesProject(projectName, cfg.accountId, cfg.token);
+    const deployment = await deployFiles(projectName, cfg.accountId, cfg.token, files);
+
+    if (!deployment.success) {
+      const errMsg = deployment.errors?.[0]?.message || JSON.stringify(deployment.errors);
+      return res.status(500).json({ error: 'Cloudflare deploy failed: ' + errMsg });
+    }
+
+    const url = deployment.result?.url || `https://${projectName}.pages.dev`;
+
+    const site = {
+      id: uuidv4(),
+      displayName: siteName,
+      projectName,
+      url,
+      deploymentId: deployment.result?.id,
+      fileCount: files.length,
+      createdAt: new Date().toISOString(),
+    };
+
+    const sites = loadSites();
+    // Update existing entry for same project, or add new
+    const existingIdx = sites.findIndex(s => s.projectName === projectName);
+    if (existingIdx !== -1) {
+      site.id = sites[existingIdx].id;
+      sites[existingIdx] = site;
+    } else {
+      sites.unshift(site);
+    }
+    saveSites(sites);
+
+    res.status(201).json(site);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
+
+ensureDataDir();
+app.listen(PORT, () => console.log(`Cloudflare Pages Deployer running on http://localhost:${PORT}`));
