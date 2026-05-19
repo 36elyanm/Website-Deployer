@@ -391,9 +391,13 @@ function buildSiteCard(site) {
           ${esc(site.displayName || site.projectName)}
         </div>
         <div class="site-url-row">
-          <span class="site-url-label">${site.customDomain ? 'Pages' : 'URL'}</span>
+          <span class="site-url-label">Live</span>
           <a class="site-url-link" href="${esc(site.url)}" target="_blank" rel="noopener">${esc(site.url)}</a>
         </div>
+        ${site.productionUrl && site.productionUrl !== site.url ? `<div class="site-url-row">
+          <span class="site-url-label">Prod</span>
+          <a class="site-url-link" href="${esc(site.productionUrl)}" target="_blank" rel="noopener" style="color:var(--text3)">${esc(site.productionUrl)}</a>
+        </div>` : ''}
         ${domainRow}
         <div class="site-url-row">
           <span class="site-url-label">Project</span>

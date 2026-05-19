@@ -102,7 +102,11 @@ export async function onRequestPost({ request, env }) {
       return jsonError('Deploy failed: ' + (deployment.errors?.[0]?.message || JSON.stringify(deployment.errors)), 500);
     }
 
-    const pagesUrl = deployment.result?.url || `https://${projectName}.pages.dev`;
+    // Use the deployment-specific URL — it works immediately.
+    // The production URL (projectName.pages.dev) can take a minute to propagate.
+    const deploymentUrl = deployment.result?.url;
+    const productionUrl = `https://${projectName}.pages.dev`;
+    const pagesUrl = deploymentUrl || productionUrl;
 
     // Attach custom domain if provided
     let customDomainStatus = null;
@@ -126,6 +130,7 @@ export async function onRequestPost({ request, env }) {
       displayName: siteName,
       projectName,
       url: pagesUrl,
+      productionUrl,
       customDomain: customDomain || null,
       customDomainStatus,
       deploymentId: deployment.result?.id,
