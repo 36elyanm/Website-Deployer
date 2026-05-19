@@ -159,6 +159,38 @@ app.patch('/api/sites/:id', (req, res) => {
   res.json(site);
 });
 
+app.post('/api/sites/:id/domain', async (req, res) => {
+  const cfg = loadConfig();
+  if (!cfg.token || !cfg.accountId) return res.status(400).json({ error: 'No credentials configured.' });
+
+  const sites = loadSites();
+  const site = sites.find(s => s.id === req.params.id);
+  if (!site) return res.status(404).json({ error: 'Site not found.' });
+
+  const domain = (req.body.domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+  if (!domain) return res.status(400).json({ error: 'domain is required.' });
+
+  const result = await cfFetch(
+    `/accounts/${cfg.accountId}/pages/projects/${site.projectName}/domains`,
+    cfg.token,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: domain }),
+    }
+  );
+
+  if (!result.success) {
+    const msg = result.errors?.[0]?.message || 'Failed to attach domain.';
+    return res.status(400).json({ error: msg });
+  }
+
+  site.customDomain = domain;
+  site.customDomainStatus = result.result?.status || 'pending';
+  saveSites(sites);
+  res.json(site);
+});
+
 app.delete('/api/sites/:id', (req, res) => {
   const sites = loadSites();
   const idx = sites.findIndex(s => s.id === req.params.id);
@@ -181,6 +213,7 @@ app.post('/api/deploy', upload.fields([
 
   const siteName = (req.body.siteName || 'my-site').trim();
   const projectName = slugify(siteName);
+  const customDomain = (req.body.customDomain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
 
   let files = [];
 
@@ -230,13 +263,36 @@ app.post('/api/deploy', upload.fields([
       return res.status(500).json({ error: 'Cloudflare deploy failed: ' + errMsg });
     }
 
-    const url = deployment.result?.url || `https://${projectName}.pages.dev`;
+    const pagesUrl = deployment.result?.url || `https://${projectName}.pages.dev`;
+
+    // Attach custom domain if provided
+    let customDomainStatus = null;
+    if (customDomain) {
+      const domainRes = await cfFetch(
+        `/accounts/${cfg.accountId}/pages/projects/${projectName}/domains`,
+        cfg.token,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: customDomain }),
+        }
+      );
+      if (domainRes.success) {
+        customDomainStatus = domainRes.result?.status || 'pending';
+      } else {
+        // Non-fatal: report but still return success
+        const msg = domainRes.errors?.[0]?.message || 'Unknown error';
+        customDomainStatus = `error: ${msg}`;
+      }
+    }
 
     const site = {
       id: uuidv4(),
       displayName: siteName,
       projectName,
-      url,
+      url: pagesUrl,
+      customDomain: customDomain || null,
+      customDomainStatus,
       deploymentId: deployment.result?.id,
       fileCount: files.length,
       createdAt: new Date().toISOString(),

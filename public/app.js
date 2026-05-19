@@ -3,6 +3,7 @@
 let selectedFiles = []; // [{name, path, file}]
 let uploadMode = null;  // 'files' | 'folder' | 'zip'
 let renameSiteId = null;
+let domainSiteId = null;
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
@@ -266,6 +267,8 @@ async function deploysite() {
   try {
     const fd = new FormData();
     fd.append('siteName', siteName);
+    const customDomain = document.getElementById('customDomain').value.trim();
+    if (customDomain) fd.append('customDomain', customDomain);
 
     if (uploadMode === 'zip') {
       fd.append('zip', selectedFiles[0].file);
@@ -284,10 +287,16 @@ async function deploysite() {
       return;
     }
 
-    okEl.innerHTML = `
-      Deployed! Your site is live at
-      <a href="${esc(data.url)}" target="_blank" rel="noopener">${esc(data.url)}</a>
-      — it may take a minute to propagate.`;
+    let successHtml = `Deployed! Your site is live at <a href="${esc(data.url)}" target="_blank" rel="noopener">${esc(data.url)}</a>.`;
+    if (data.customDomain) {
+      const statusLabel = data.customDomainStatus?.startsWith('error')
+        ? `<strong style="color:#c0392b">Domain attachment failed: ${esc(data.customDomainStatus.replace('error: ', ''))}</strong>`
+        : `Custom domain <strong>${esc(data.customDomain)}</strong> is being activated — DNS and SSL will be ready within a few minutes.`;
+      successHtml += ` ${statusLabel}`;
+    } else {
+      successHtml += ` It may take a minute to propagate.`;
+    }
+    okEl.innerHTML = successHtml;
     okEl.hidden = false;
 
     // Reset upload
@@ -295,6 +304,7 @@ async function deploysite() {
     uploadMode = null;
     renderFileList();
     document.getElementById('siteName').value = '';
+    document.getElementById('customDomain').value = '';
     updateSlugPreview();
 
     await loadSites();
@@ -342,6 +352,21 @@ function buildSiteCard(site) {
 
   const date = new Date(site.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
+  const domainRow = site.customDomain
+    ? `<div class="site-url-row">
+        <span class="site-url-label">Domain</span>
+        <a class="site-url-link" href="https://${esc(site.customDomain)}" target="_blank" rel="noopener">${esc(site.customDomain)}</a>
+        ${domainStatusChip(site.customDomainStatus)}
+      </div>`
+    : '';
+
+  const domainBtn = site.customDomain
+    ? ''
+    : `<button class="btn-sm" onclick="openDomainModal('${site.id}')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20M12 2a14.5 14.5 0 0 1 0 20M2 12h20"/><line x1="12" y1="8" x2="12" y2="8.01"/></svg>
+        Add Domain
+      </button>`;
+
   div.innerHTML = `
     <div class="site-top">
       <div class="site-info">
@@ -350,9 +375,10 @@ function buildSiteCard(site) {
           ${esc(site.displayName || site.projectName)}
         </div>
         <div class="site-url-row">
-          <span class="site-url-label">URL</span>
+          <span class="site-url-label">${site.customDomain ? 'Pages' : 'URL'}</span>
           <a class="site-url-link" href="${esc(site.url)}" target="_blank" rel="noopener">${esc(site.url)}</a>
         </div>
+        ${domainRow}
         <div class="site-url-row">
           <span class="site-url-label">Project</span>
           <span class="site-url-link" style="color:var(--text3)">${esc(site.projectName)}</span>
@@ -360,6 +386,7 @@ function buildSiteCard(site) {
         <div class="site-meta">${site.fileCount} file${site.fileCount !== 1 ? 's' : ''} · Deployed ${date}</div>
       </div>
       <div class="site-actions">
+        ${domainBtn}
         <button class="btn-sm accent" onclick="openRenameModal('${site.id}', ${JSON.stringify(esc(site.displayName || site.projectName))})">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           Rename
@@ -377,6 +404,65 @@ async function deleteSite(id) {
   if (!confirm('Remove this site from the dashboard? (The Cloudflare Pages project itself is not deleted.)')) return;
   await fetch(`/api/sites/${id}`, { method: 'DELETE' });
   await loadSites();
+}
+
+// ── Domain modal ──────────────────────────────────────────────────────────────
+
+function domainStatusChip(status) {
+  if (!status) return '';
+  if (status === 'active') return `<span class="domain-status active">Active</span>`;
+  if (status?.startsWith('error')) return `<span class="domain-status error">Error</span>`;
+  return `<span class="domain-status pending">Pending</span>`;
+}
+
+function openDomainModal(id) {
+  domainSiteId = id;
+  document.getElementById('domainInput').value = '';
+  document.getElementById('domainModalMsg').hidden = true;
+  document.getElementById('domainModal').hidden = false;
+  document.getElementById('domainInput').focus();
+
+  document.getElementById('domainSaveBtn').onclick = async () => {
+    const domain = document.getElementById('domainInput').value.trim();
+    const msgEl  = document.getElementById('domainModalMsg');
+    const btn    = document.getElementById('domainSaveBtn');
+    if (!domain) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Attaching...';
+    msgEl.hidden = true;
+
+    try {
+      const res  = await fetch(`/api/sites/${domainSiteId}/domain`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        msgEl.textContent = data.error || 'Failed to attach domain.';
+        msgEl.className = 'msg msg-error';
+        msgEl.hidden = false;
+        return;
+      }
+
+      closeDomainModal();
+      await loadSites();
+    } catch (err) {
+      msgEl.textContent = 'Network error: ' + err.message;
+      msgEl.className = 'msg msg-error';
+      msgEl.hidden = false;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Attach Domain';
+    }
+  };
+}
+
+function closeDomainModal() {
+  document.getElementById('domainModal').hidden = true;
+  domainSiteId = null;
 }
 
 // ── Rename Modal ──────────────────────────────────────────────────────────────
@@ -406,9 +492,12 @@ function closeRenameModal() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeRenameModal();
+  if (e.key === 'Escape') { closeRenameModal(); closeDomainModal(); }
   if (e.key === 'Enter' && !document.getElementById('renameModal').hidden) {
     document.getElementById('renameSaveBtn').click();
+  }
+  if (e.key === 'Enter' && !document.getElementById('domainModal').hidden) {
+    document.getElementById('domainSaveBtn').click();
   }
 });
 

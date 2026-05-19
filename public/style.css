@@ -731,6 +731,58 @@ input::placeholder { color: var(--text4); font-size: 0.92rem; }
 .spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Domain input with icon ── */
+.domain-input-wrap {
+  position: relative;
+}
+
+.domain-input-wrap input {
+  padding-left: 38px;
+}
+
+.domain-input-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text4);
+  pointer-events: none;
+}
+
+.label-optional {
+  font-size: 0.67rem;
+  color: var(--text4);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 4px;
+  background: var(--surface3);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+/* ── Custom domain status chip on site card ── */
+.domain-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.domain-status.active  { background: var(--green-light); color: #1a7a3a; }
+.domain-status.pending { background: var(--orange-light); color: #8a5a00; }
+.domain-status.error   { background: var(--red-light); color: #c0392b; }
+
+/* ── Modal description text ── */
+.modal-desc {
+  font-size: 0.83rem;
+  color: var(--text3);
+  line-height: 1.5;
+}
+
 /* ── Slug preview ── */
 #slugPreview { font-size: 0.77rem; }
 #slugText { font-family: ui-monospace, "SF Mono", "Fira Code", monospace; color: var(--accent); }
