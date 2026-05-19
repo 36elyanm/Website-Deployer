@@ -66,7 +66,7 @@ export async function onRequestPost({ request, env }) {
 
     // Build multipart body for Cloudflare Pages deployment API
     const cfForm = new FormData();
-    cfForm.append('manifest', new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'manifest.json');
+    cfForm.append('manifest', JSON.stringify(manifest));
     for (const file of files) {
       cfForm.append(file.hash, new Blob([file.content]), file.name);
     }
